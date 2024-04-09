@@ -291,7 +291,7 @@ def launch_uvicorn():
                 bind_ip = "0.0.0.0"
             print("Set bind_ip to ", bind_ip)
 
-    os.chdir("stable-diffusion")
+    #os.chdir("stable-diffusion")
 
     if is_amd_on_linux():
         setup_amd_environment()
