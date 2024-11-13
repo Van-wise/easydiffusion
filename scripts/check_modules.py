@@ -75,7 +75,7 @@ def install(module_name: str, module_version: str):
         elif module_name == "torchvision":
             module_version = "0.14.1"
 
-    install_cmd = f"python -m pip install --upgrade {module_name}=={module_version}"
+    install_cmd = f"python -m pip install --upgrade {module_name}=={module_version} --no-cache-dir"
 
     if index_url:
         install_cmd += f" --index-url {index_url}"
@@ -388,11 +388,7 @@ def launch_uvicorn():
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
-<<<<<<< Updated upstream
-        os.environ["PYTHONPATH"] = str(Path( os.environ["INSTALL_ENV_DIR"], "lib", "python3.8", "site-packages"))
-=======
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.8", "site-packages"))
->>>>>>> Stashed changes
+        os.environ["PYTHONPATH"] = str(Path( os.environ["INSTALL_ENV_DIR"], "lib", "python3.10", "site-packages"))
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -413,7 +409,7 @@ def launch_uvicorn():
                 bind_ip = "0.0.0.0"
             print("Set bind_ip to ", bind_ip)
 
-    os.chdir("stable-diffusion")
+    #os.chdir("stable-diffusion")
 
     if is_amd_on_linux():
         setup_amd_environment()
