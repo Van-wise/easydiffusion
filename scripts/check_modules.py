@@ -27,8 +27,8 @@ modules_to_check = {
     # "diffusers": "0.21.4", # checked later
     "stable-diffusion-sdkit": "2.1.5",
     "rich": "13.7.1",
-    "uvicorn": "0.19.0",
-    "fastapi": "0.85.1",
+    "uvicorn": "0.32.0",
+    "fastapi": "0.112.0",
     "pycloudflared": "0.2.0",
     "ruamel.yaml": "0.17.21",
     "sqlalchemy": "2.0.19",
