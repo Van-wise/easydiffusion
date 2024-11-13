@@ -15,13 +15,16 @@ import traceback
 import shutil
 from pathlib import Path
 from pprint import pprint
+import re
 
 os_name = platform.system()
 
 modules_to_check = {
     "torch": ("1.11.0", "1.13.1", "2.0.0", "2.0.1"),
     "torchvision": ("0.12.0", "0.14.1", "0.15.1", "0.15.2"),
-    "sdkit": "2.0.15",
+    "setuptools": "69.5.1",
+    # "sdkit": "2.0.15.6", # checked later
+    # "diffusers": "0.21.4", # checked later
     "stable-diffusion-sdkit": "2.1.5",
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
@@ -32,7 +35,7 @@ modules_to_check = {
     "python-multipart": "0.0.6",
     # "xformers": "0.0.16",
 }
-modules_to_log = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit"]
+modules_to_log = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
 
 
 def version(module_name: str) -> str:
@@ -91,6 +94,14 @@ def update_modules():
 
         allowed_versions, latest_version = get_allowed_versions(module_name, allowed_versions)
 
+        if module_name == "setuptools":
+            if os_name == "Windows":
+                allowed_versions = ("59.8.0",)
+                latest_version = "59.8.0"
+            else:
+                allowed_versions = ("69.0.0",)
+                latest_version = "69.0.0"
+
         requires_install = False
         if module_name in ("torch", "torchvision"):
             if version(module_name) is None:  # allow any torch version
@@ -110,11 +121,114 @@ def update_modules():
                 fail(module_name)
             else:
                 if version(module_name) != latest_version:
-                    print(f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!")
+                    print(
+                        f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!"
+                    )
+
+    # different sdkit versions, with the corresponding diffusers
+    #  if sdkit is 2.0.15.x (or lower), then diffusers should be restricted to 0.21.4 (see below for the reason)
+    #  otherwise use the current sdkit version (with the corresponding diffusers version)
+
+    expected_sdkit_version_str = "2.0.20.4"
+    expected_diffusers_version_str = "0.28.2"
+
+    legacy_sdkit_version_str = "2.0.15.7"
+    legacy_diffusers_version_str = "0.21.4"
+
+    sdkit_version_str = version("sdkit")
+    if sdkit_version_str is None:  # first install
+        _install("sdkit", expected_sdkit_version_str)
+        _install("diffusers", expected_diffusers_version_str)
+    else:
+        sdkit_version = version_str_to_tuple(sdkit_version_str)
+        legacy_sdkit_version = version_str_to_tuple(legacy_sdkit_version_str)
+
+        if sdkit_version[:3] <= legacy_sdkit_version[:3]:  # and torch_version < (0, 13):
+            # stick to diffusers 0.21.4, since it preserves torch 0.11+ compatibility.
+            # upgrading beyond this will result in a 2+ GB download of torch on older installations
+            #  and a time-consuming chain of small package updates due to huggingface_hub upgrade.
+            # for now, the user will need to explicitly upgrade to a newer sdkit, to break this ceiling.
+
+            install_pkg_if_necessary("sdkit", legacy_sdkit_version_str)
+            install_pkg_if_necessary("diffusers", legacy_diffusers_version_str)
+        else:
+            torch_version = version_str_to_tuple(version("torch"))
+            if torch_version < (1, 13):
+                # install the gpu-compatible torch (if necessary), instead of the default CPU-only one
+                # from the diffusers dependency chain
+                install("torch", modules_to_check["torch"][-1])
+                install("torchvision", modules_to_check["torchvision"][-1])
+
+            install_pkg_if_necessary("sdkit", expected_sdkit_version_str)
+            install_pkg_if_necessary("diffusers", expected_diffusers_version_str)
+
+    # hotfix accelerate
+    accelerate_version = version("accelerate")
+    if accelerate_version is None:
+        install("accelerate", "0.23.0")
+    else:
+        accelerate_version = accelerate_version.split(".")
+        accelerate_version = tuple(map(int, accelerate_version))
+        if accelerate_version < (0, 23):
+            install("accelerate", "0.23.0")
+
+    # hotfix - 29 May 2024. sdkit has stopped pulling its dependencies for some reason
+    # temporarily dumping sdkit's requirements here:
+    if os_name != "Windows":
+        sdkit_deps = [
+            "gfpgan",
+            "piexif",
+            "realesrgan",
+            "requests",
+            "picklescan",
+            "safetensors==0.3.3",
+            "k-diffusion==0.0.12",
+            "compel==2.0.1",
+            "controlnet-aux==0.0.6",
+            "invisible-watermark==0.2.0",  # required for SD XL
+        ]
+
+        for mod in sdkit_deps:
+            mod_name = mod
+            mod_force_version_str = None
+            if "==" in mod:
+                mod_name, mod_force_version_str = mod.split("==")
+
+            curr_mod_version_str = version(mod_name)
+            if curr_mod_version_str is None:
+                _install(mod_name, mod_force_version_str)
+            elif mod_force_version_str is not None:
+                curr_mod_version = version_str_to_tuple(curr_mod_version_str)
+                mod_force_version = version_str_to_tuple(mod_force_version_str)
+
+                if curr_mod_version != mod_force_version:
+                    _install(mod_name, mod_force_version_str)
+
+    for module_name in modules_to_log:
+        print(f"{module_name}: {version(module_name)}")
 
 
-        if module_name in modules_to_log:
-            print(f"{module_name}: {version(module_name)}")
+def _install(module_name, module_version=None):
+    if module_version is None:
+        install_cmd = f"python -m pip install {module_name}"
+    else:
+        install_cmd = f"python -m pip install --upgrade {module_name}=={module_version}"
+
+    print(">", install_cmd)
+    os.system(install_cmd)
+
+
+def install_pkg_if_necessary(pkg_name, required_version):
+    pkg_version = version(pkg_name)
+    if pkg_version != required_version:
+        _install(pkg_name, required_version)
+
+
+def version_str_to_tuple(ver_str):
+    ver_str = ver_str.split("+")[0]
+    ver_str = re.sub("[^0-9.]", "", ver_str)
+    ver = ver_str.split(".")
+    return tuple(map(int, ver))
 
 
 ### utilities
@@ -177,7 +291,9 @@ Thanks!"""
     )
     exit(1)
 
+
 ### Launcher
+
 
 def get_config():
     config_directory = os.path.dirname(__file__)  # this will be "scripts"
@@ -193,15 +309,17 @@ def get_config():
 
     if os.path.isfile(config_yaml):
         from ruamel.yaml import YAML
-        yaml = YAML(typ='safe')
-        with open(config_yaml, 'r') as configfile:
+
+        yaml = YAML(typ="safe")
+        with open(config_yaml, "r") as configfile:
             try:
                 config = yaml.load(configfile)
             except Exception as e:
                 print(e, file=sys.stderr)
     elif os.path.isfile(config_json):
         import json
-        with open(config_json, 'r') as configfile:
+
+        with open(config_json, "r") as configfile:
             try:
                 config = json.load(configfile)
             except Exception as e:
@@ -215,43 +333,43 @@ def get_config():
 def setup_amd_environment():
     if not os.access("/dev/kfd", os.W_OK):
         print(
-                  "#########################################################################\n"
-                + "#           EasyDiffusion has no write access to /dev/kfd.              #\n"
-                + "#########################################################################\n"
-                + "\n"
-                + "Without this, the ROCm driver will probably not be able to initialize the GPU and EasyDiffusion will use the CPU for rendering.\n"
-                + "\n"
-                + "Follow the instructions on this site to configure the access:\n"
-                + "https://github.com/easydiffusion/easydiffusion/wiki/AMD-on-Linux#access-permissions\n"
-                + "\n"
+            "#########################################################################\n"
+            + "#           EasyDiffusion has no write access to /dev/kfd.              #\n"
+            + "#########################################################################\n"
+            + "\n"
+            + "Without this, the ROCm driver will probably not be able to initialize the GPU and EasyDiffusion will use the CPU for rendering.\n"
+            + "\n"
+            + "Follow the instructions on this site to configure the access:\n"
+            + "https://github.com/easydiffusion/easydiffusion/wiki/AMD-on-Linux#access-permissions\n"
+            + "\n"
         )
 
     gpus = list(filter(lambda x: ("amdgpu" in x), open("/proc/bus/pci/devices", "r").readlines()))
-    gpus = [ x.split("\t")[1].upper() for x in gpus ]
-    gpus = [ AMD_PCI_IDs[x] for x in gpus if x in AMD_PCI_IDs ]
-    i=0
-    supported_gpus=[]
+    gpus = [x.split("\t")[1].upper() for x in gpus]
+    gpus = [AMD_PCI_IDs[x] for x in gpus if x in AMD_PCI_IDs]
+    i = 0
+    supported_gpus = []
     for gpu in gpus:
         print(f"Found AMD GPU {gpu}.")
         if gpu.startswith("Navi 1"):
             print("--- Applying Navi 1 settings")
-            os.environ["HSA_OVERRIDE_GFX_VERSION"]="10.3.0"
-            os.environ["FORCE_FULL_PRECISION"]="yes"
-            os.environ["HIP_VISIBLE_DEVICES"]=str(i)
+            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
+            os.environ["FORCE_FULL_PRECISION"] = "yes"
+            os.environ["HIP_VISIBLE_DEVICES"] = str(i)
             supported_gpus.append("Navi 1")
-        elif gpu.startswith("Navi 2"):    
+        elif gpu.startswith("Navi 2"):
             print("--- Applying Navi 2 settings")
-            os.environ["HSA_OVERRIDE_GFX_VERSION"]="10.3.0"
-            os.environ["HIP_VISIBLE_DEVICES"]=str(i)
+            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
+            os.environ["HIP_VISIBLE_DEVICES"] = str(i)
             supported_gpus.append("Navi 2")
         elif gpu.startswith("Navi 3"):
             print("--- Applying Navi 3 settings")
-            os.environ["HSA_OVERRIDE_GFX_VERSION"]="11.0.0"
-            os.environ["HIP_VISIBLE_DEVICES"]=str(i)
+            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+            os.environ["HIP_VISIBLE_DEVICES"] = str(i)
             supported_gpus.append("Navi 3")
         else:
             print("--- This GPU is probably not supported by ROCm\n")
-        i+=1
+        i += 1
     return supported_gpus
 
 
@@ -260,7 +378,7 @@ def launch_uvicorn():
 
     pprint(config)
 
-    with open("scripts/install_status.txt","a") as f:
+    with open("scripts/install_status.txt", "a") as f:
         f.write("sd_weights_downloaded\n")
         f.write("sd_install_complete\n")
 
@@ -268,9 +386,13 @@ def launch_uvicorn():
 
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     if os_name == "Windows":
-        os.environ["PYTHONPATH"] = str(Path( os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
+<<<<<<< Updated upstream
         os.environ["PYTHONPATH"] = str(Path( os.environ["INSTALL_ENV_DIR"], "lib", "python3.8", "site-packages"))
+=======
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.8", "site-packages"))
+>>>>>>> Stashed changes
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -297,7 +419,18 @@ def launch_uvicorn():
         setup_amd_environment()
 
     print("\nLaunching uvicorn\n")
-    os.system(f'python -m uvicorn main:server_api --app-dir "{os.environ["SD_UI_PATH"]}" --port {listen_port} --host {bind_ip} --log-level error')
+
+    import uvicorn
+
+    uvicorn.run(
+        "main:server_api",
+        port=listen_port,
+        log_level="error",
+        app_dir=os.environ["SD_UI_PATH"],
+        host=bind_ip,
+        access_log=False,
+    )
+
 
 ### Start
 
@@ -1102,5 +1235,5 @@ AMD_PCI_IDs = {
 
 update_modules()
 
-if len(sys.argv) > 1 and sys.argv[1]=="--launch-uvicorn":
+if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
     launch_uvicorn()
