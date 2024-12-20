@@ -20,8 +20,9 @@ class GenerateImageRequest(BaseModel):
     control_image: Any = None
     control_alpha: Union[float, List[float]] = None
     prompt_strength: float = 0.8
-    preserve_init_image_color_profile = False
+    
     class Config:
+        preserve_init_image_color_profile = False
         ignored_types = (type(preserve_init_image_color_profile),) 
     strict_mask_border = False
 
