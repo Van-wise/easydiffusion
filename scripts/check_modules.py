@@ -34,7 +34,7 @@ modules_to_check = {
     "sqlalchemy": "2.0.19",
     "python-multipart": "0.0.6",
     # "xformers": "0.0.16",
-    "huggingface-hub": "0.27.0",
+    "huggingface-hub": "0.23.5",
     "wandb": "0.13.7",
 }
 modules_to_log = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
