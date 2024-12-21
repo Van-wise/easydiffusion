@@ -24,7 +24,7 @@ modules_to_check = {
     "torchvision": ("0.12.0", "0.14.1", "0.15.1", "0.15.2"),
     "setuptools": "69.5.1",
     # "sdkit": "2.0.15.6", # checked later
-    # "diffusers": "0.21.4", # checked later
+    "diffusers": "0.21.4", # checked later
     "stable-diffusion-sdkit": "2.1.5",
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
