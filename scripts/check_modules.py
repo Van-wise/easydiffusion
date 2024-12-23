@@ -22,11 +22,11 @@ os_name = platform.system()
 modules_to_check = {
     "torch": ("1.11.0", "1.13.1", "2.0.0", "2.0.1"),
     "torchvision": ("0.12.0", "0.14.1", "0.15.1", "0.15.2"),
-    #"setuptools": "69.5.1",
-    "sdkit": "2.0.20.4", # checked later
-    "diffusers": "0.28.2", # checked later
+    "setuptools": "69.5.1",
+    # "sdkit": "2.0.15.6", # checked later
+    # "diffusers": "0.21.4", # checked later
     "stable-diffusion-sdkit": "2.1.5",
-    #"rich": "12.6.0",
+    "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
     #"pycloudflared": "0.2.0",
@@ -34,7 +34,7 @@ modules_to_check = {
     "sqlalchemy": "2.0.19",
     "python-multipart": "0.0.6",
     # "xformers": "0.0.16",
-    #"huggingface-hub": "0.23.5",
+    "huggingface-hub": "0.21.4",
     "wandb": "0.13.7",
 }
 modules_to_log = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
