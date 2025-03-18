@@ -390,7 +390,7 @@ def launch_uvicorn():
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.10", "site-packages"))
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.11", "site-packages"))
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
