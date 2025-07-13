@@ -20,22 +20,22 @@ import re
 os_name = platform.system()
 
 modules_to_check = {
-    "torch": ("1.11.0", "1.13.1", "2.0.0", "2.0.1"),
-    "torchvision": ("0.12.0", "0.14.1", "0.15.1", "0.15.2"),
+    "torch": ("1.11.0", "1.13.1", "2.0.0", "2.0.1", "2.6.0+cu124"),  # 添加支持的torch版本
+    "torchvision": ("0.12.0", "0.14.1", "0.15.1", "0.15.2", "0.21.0+cu124"),  # 添加支持的torchvision版本
     "setuptools": "69.5.1",
-    "sdkit": "2.0.15.6", # checked later
-    # "diffusers": "0.21.4", # checked later
+    "sdkit": "2.0.15.7",  # 更新sdkit版本
+    "diffusers": "0.21.4",
     "stable-diffusion-sdkit": "2.1.5",
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
-    #"pycloudflared": "0.2.0",
     "ruamel.yaml": "0.17.21",
     "sqlalchemy": "2.0.19",
-    "python-multipart": "0.0.6",
-    # "xformers": "0.0.16",
-    "huggingface-hub": "0.21.4",
+    "python-multipart": "0.0.18",  # 更新python-multipart版本
+    "huggingface-hub": "0.25.0",  # 更新huggingface-hub版本
     "wandb": "0.13.7",
+    "safetensors": "0.4.3",  # 更新safetensors版本
+    "transformers": "4.41.0",  # 更新transformers版本
 }
 modules_to_log = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
 
