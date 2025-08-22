@@ -23,13 +23,13 @@ os_name = platform.system()
 
 modules_to_check = {
     "setuptools": "69.5.1",
-    # "sdkit": "2.0.15.6", # checked later
+    "sdkit": "2.0.15.6", # checked later
     # "diffusers": "0.21.4", # checked later
     "stable-diffusion-sdkit": "2.1.5",
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
-    "pycloudflared": "0.2.0",
+    #"pycloudflared": "0.2.0",
     "ruamel.yaml": "0.17.21",
     "sqlalchemy": "2.0.19",
     "python-multipart": "0.0.6",
@@ -305,7 +305,7 @@ def launch_uvicorn():
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.8", "site-packages"))
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.12", "site-packages"))
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -326,7 +326,7 @@ def launch_uvicorn():
                 bind_ip = "0.0.0.0"
             print("Set bind_ip to ", bind_ip)
 
-    os.chdir("stable-diffusion")
+    #os.chdir("stable-diffusion")
 
     print("\nLaunching uvicorn\n")
 
