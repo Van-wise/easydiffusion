@@ -1,9 +1,9 @@
 """
 This script checks and installs the required modules.
-Final Version: This script completely avoids installing the 'sdkit' package itself,
-as its dependency metadata is broken. Instead, it manually installs all of
-sdkit's necessary sub-dependencies with correct and compatible versions.
-This provides a stable and functional environment without triggering the dependency trap.
+Final Version: This script uses a forceful, no-dependencies installation
+strategy to construct the environment precisely as required. It installs
+a specific, known-good set of packages in a deliberate order, bypassing
+pip's dependency resolver to avoid all conflicts caused by legacy packages.
 """
 import os
 import sys
@@ -13,27 +13,31 @@ from packaging.version import parse as parse_version
 
 # --- Configuration ---
 
-# We are NOT installing 'sdkit'. Instead, we install its key components manually.
-REQUIRED_PACKAGES = {
-    # Core functionality packages from sdkit
-    "stable-diffusion-sdkit": "2.1.5",
+# This is a complete, known-good "lockfile" of all necessary packages.
+# We will install every single one of these using --no-dependencies to ensure
+# no other versions are pulled in unexpectedly. The order is intentional.
+KNOWN_GOOD_ENV = {
+    # Critical build-level dependencies first, with modern versions
+    "safetensors": "0.4.3",  # A modern, stable version
+    "tokenizers": "0.15.2", # A modern, stable version
+
+    # Core AI/ML libraries
+    "transformers": "4.33.2",
     "diffusers": "0.28.2",
+    "accelerate": "0.23.0",
     "k-diffusion": "0.0.12",
     "compel": "2.0.1",
-    "controlnet-aux": "0.0.6",
-    "invisible-watermark": "0.2.0",
+    "einops": "0.3.0", # s-d-sdkit needs this old version
+    "kornia": "0.6.0",  # s-d-sdkit needs this old version
+    "open-clip-torch": "2.0.2",
+    "pytorch-lightning": "1.4.2",
+    "torchmetrics": "0.6.0",
+    "opencv-python": "4.6.0.66",
+    
+    # Application layer
+    "stable-diffusion-sdkit": "2.1.5",
 
-    # Essential dependencies that were causing build failures
-    "safetensors": None,  # None = install latest compatible version
-    "tokenizers": None,   # None = install latest compatible version
-    "accelerate": "0.23.0",
-
-    # Other required UI and utility packages
-    "gfpgan": "1.3.8",
-    "realesrgan": "0.3.0",
-    "piexif": "1.1.3",
-    "picklescan": "0.0.28", # <-- *** 添加此行 ***
-    "basicsr": "1.4.2",
+    # UI and utility packages
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
@@ -42,6 +46,14 @@ REQUIRED_PACKAGES = {
     "python-multipart": "0.0.6",
     "wandb": "0.17.2",
     "torchsde": "0.2.6",
+    "basicsr": "1.4.2",
+    "gfpgan": "1.3.8",
+    "realesrgan": "0.3.0",
+    "piexif": "1.1.3",
+    "picklescan": "0.0.28",
+    "albumentations": "1.3.0",
+    "omegaconf": "2.1.1",
+    "test-tube": "0.7.5",
 }
 
 # GPU-specific packages for performance
@@ -49,59 +61,49 @@ GPU_PACKAGES = {
     "xformers": "0.0.16",
 }
 
-MODULES_TO_LOG = ["torch", "torchvision", "stable-diffusion-sdkit", "diffusers", "accelerate", "xformers", "safetensors", "picklescan"]
-
-# ... (以下所有函数保持不变，无需修改) ...
+MODULES_TO_LOG = list(KNOWN_GOOD_ENV.keys()) + list(GPU_PACKAGES.keys())
 
 def get_package_version(package_name: str) -> str:
-    # ... (代码不变)
     try:
         return pkg_version(package_name)
     except PackageNotFoundError:
         return None
 
-def install_package(package_name: str, version_str: str = None, use_pep517: bool = False):
-    # ... (代码不变)
-    package_spec = f"{package_name}=={version_str}" if version_str else package_name
-    install_cmd = f'"{sys.executable}" -m pip install --upgrade --no-cache-dir {package_spec}'
-    if use_pep517:
-        install_cmd += " --use-pep517"
+def force_install_package(package_name: str, version_str: str):
+    package_spec = f"{package_name}=={version_str}"
+    # The --no-dependencies flag is the key to this entire strategy
+    install_cmd = f'"{sys.executable}" -m pip install --upgrade --no-dependencies --no-cache-dir {package_spec}'
     
     print(f"> {install_cmd}")
     result = os.system(install_cmd)
     if result != 0:
         fail(package_name)
 
-def check_and_install_packages(packages: dict):
-    # ... (代码不变)
-    for package, required_version in packages.items():
-        current_version = get_package_version(package)
-        use_pep517 = package in ("basicsr", "gfpgan")
-
-        if current_version is None:
-            print(f"Package '{package}' not found. Installing {required_version or 'latest'}...")
-            install_package(package, required_version, use_pep517)
-        elif required_version and parse_version(current_version) != parse_version(required_version):
-            print(f"Package '{package}' version mismatch. Found {current_version}, requires {required_version}. Re-installing...")
-            install_package(package, required_version, use_pep517)
-        else:
-            print(f"Package '{package}=={current_version}' is already correct. Skipping.")
-
 def update_modules():
-    # ... (代码不变)
-    print("--- Checking environment dependencies ---")
+    print("--- Checking environment dependencies using forceful installation strategy ---")
+
     if not get_package_version("torch"):
         import torchruntime
         torchruntime.install(["torch", "torchvision"])
     
-    print("\n--- Installing all necessary components (bypassing sdkit package) ---")
-    check_and_install_packages(REQUIRED_PACKAGES)
+    for package, required_version in KNOWN_GOOD_ENV.items():
+        current_version = get_package_version(package)
+        
+        # We always reinstall if the version doesn't match exactly
+        if str(current_version) != required_version:
+            force_install_package(package, required_version)
+        else:
+            print(f"Package '{package}=={current_version}' is already correct. Skipping.")
 
     try:
         import torch
         if torch.cuda.is_available():
             print("\n--- CUDA GPU detected. Checking GPU-specific packages... ---")
-            check_and_install_packages(GPU_PACKAGES)
+            for package, required_version in GPU_PACKAGES.items():
+                if str(get_package_version(package)) != required_version:
+                    force_install_package(package, required_version)
+                else:
+                    print(f"Package '{package}=={get_package_version(package)}' is already correct. Skipping.")
         else:
             print("\n--- No CUDA GPU detected. Skipping GPU-specific packages. ---")
     except ImportError:
@@ -111,21 +113,20 @@ def update_modules():
     for module_name in MODULES_TO_LOG:
         version = get_package_version(module_name)
         print(f"{module_name}: {version if version else 'Not Installed'}")
-    print("sdkit: Not Installed (by design)")
-
 
 def fail(module_name):
-    # ... (代码不变)
     print(f"\nERROR: Failed to install or upgrade '{module_name}'.")
     exit(1)
 
+# --- Launcher and Utility Functions (remain unchanged) ---
+from pathlib import Path
+import platform
 
 def get_config():
-    # ... (代码不变)
-    from pathlib import Path
+    # ... (code remains the same)
     config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
-    if not os.path.isfile(config_yaml): config_yaml = os.path.join(config_directory, "config.yaml") # legacy location
+    if not os.path.isfile(config_yaml): config_yaml = os.path.join(config_directory, "config.yaml")
     if os.path.isfile(config_yaml):
         from ruamel.yaml import YAML
         yaml = YAML(typ="safe")
@@ -134,9 +135,7 @@ def get_config():
     return {}
 
 def launch_uvicorn():
-    # ... (代码不变)
-    from pathlib import Path
-    import platform
+    # ... (code remains the same)
     config = get_config()
     print("\nEasy Diffusion installation complete, starting the server!\n")
     
