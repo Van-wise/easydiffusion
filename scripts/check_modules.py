@@ -1,13 +1,6 @@
 """
 This script checks and installs the required modules.
-
-This script runs inside the legacy "stable-diffusion" folder
-
-TODO - Maybe replace the bulk of this script with a call to `pip install -f requirements.txt`, with
-a custom index URL depending on the platform.
-
 """
-
 import os, sys
 from importlib.metadata import version as pkg_version
 import platform
@@ -16,44 +9,33 @@ import shutil
 from pathlib import Path
 from pprint import pprint
 import re
-# 修复：将torchruntime和get_gpus的导入移动到update_modules函数中，
-# 确保在调用安装函数之前不会触发ModuleNotFoundError
+# 移除顶层导入，使其在函数中按需导入
 # import torchruntime
 # from torchruntime.device_db import get_gpus
 
 os_name = platform.system()
 
 modules_to_check = {
-    "setuptools": "69.5.1",
-    "sdkit": "2.0.15.6", # checked later
-    # "diffusers": "0.21.4", # checked later
-    "stable-diffusion-sdkit": "2.1.5",
+    # 移除setuptools, diffusers, huggingface-hub, uvicorn, python-multipart等
+    # 这些库在Colab代码中手动安装，以解决版本冲突
     "rich": "12.6.0",
-    "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
-    #"pycloudflared": "0.2.0",
     "ruamel.yaml": "0.17.21",
     "sqlalchemy": "2.0.19",
-    "python-multipart": "0.0.6",
-    # "xformers": "0.0.16",
-    "huggingface-hub": "0.21.4",
     "wandb": "0.17.2",
-    # "torchruntime": "1.16.2",
     "torchsde": "0.2.6",
     "basicsr": "1.4.2",
     "gfpgan": "1.3.8",
 }
-modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
+modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "huggingface-hub", "uvicorn", "python-multipart"]
 
 BLACKWELL_DEVICES = re.compile(r"\b(?:5060|5070|5080|5090)\b")
-
 
 def version(module_name: str) -> str:
     try:
         return pkg_version(module_name)
     except:
         return None
-
 
 def install(module_name: str, module_version: str, index_url=None):
     install_cmd = f'"{sys.executable}" -m pip install --upgrade {module_name}=={module_version}'
@@ -63,17 +45,15 @@ def install(module_name: str, module_version: str, index_url=None):
     if module_name == "sdkit" and version("sdkit") is not None:
         install_cmd += " -q"
     if module_name in ("basicsr", "gfpgan"):
-        install_cmd += " --use-pep517"  # potential fix for https://github.com/easydiffusion/easydiffusion/issues/1942
-
+        install_cmd += " --use-pep517"
+    
     print(">", install_cmd)
     os.system(install_cmd)
 
-
 def update_modules():
-    # 修复：将import语句移至此处
     import torchruntime
     from torchruntime.device_db import get_gpus
-    
+
     if version("torch") is None:
         torchruntime.install(["torch", "torchvision"])
     else:
@@ -104,14 +84,6 @@ def update_modules():
 
         allowed_versions, latest_version = get_allowed_versions(module_name, allowed_versions)
 
-        if module_name == "setuptools":
-            if os_name == "Windows":
-                allowed_versions = ("59.8.0",)
-                latest_version = "59.8.0"
-            else:
-                allowed_versions = ("69.5.1",)
-                latest_version = "69.5.1"
-
         requires_install = version(module_name) not in allowed_versions
 
         if requires_install:
@@ -126,83 +98,9 @@ def update_modules():
                         f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!"
                     )
 
-    # different sdkit versions, with the corresponding diffusers
-    #  if sdkit is 2.0.15.x (or lower), then diffusers should be restricted to 0.21.4 (see below for the reason)
-    #  otherwise use the current sdkit version (with the corresponding diffusers version)
-
-    expected_sdkit_version_str = "2.0.22.8"
-    expected_diffusers_version_str = "0.28.2"
-
-    legacy_sdkit_version_str = "2.0.15.17"
-    legacy_diffusers_version_str = "0.21.4"
-
-    sdkit_version_str = version("sdkit")
-    if sdkit_version_str is None:  # first install
-        _install("sdkit", expected_sdkit_version_str)
-        _install("diffusers", expected_diffusers_version_str)
-    else:
-        sdkit_version = version_str_to_tuple(sdkit_version_str)
-        legacy_sdkit_version = version_str_to_tuple(legacy_sdkit_version_str)
-
-        if sdkit_version[:3] <= legacy_sdkit_version[:3]:
-            # stick to diffusers 0.21.4, since it preserves torch 0.11+ compatibility.
-            # upgrading beyond this will result in a 2+ GB download of torch on older installations
-            #  and a time-consuming chain of small package updates due to huggingface_hub upgrade.
-            # for now, the user will need to explicitly upgrade to a newer sdkit, to break this ceiling.
-
-            install_pkg_if_necessary("sdkit", legacy_sdkit_version_str)
-            install_pkg_if_necessary("diffusers", legacy_diffusers_version_str)
-        else:
-            torch_version = version_str_to_tuple(version("torch"))
-            if torch_version < (1, 13):
-                # install the gpu-compatible torch (if necessary), instead of the default CPU-only one
-                # from the diffusers dependency chain
-                torchruntime.install(["--upgrade", "torch", "torchvision"])
-
-            install_pkg_if_necessary("sdkit", expected_sdkit_version_str)
-            install_pkg_if_necessary("diffusers", expected_diffusers_version_str)
-
-    # hotfix accelerate
-    accelerate_version = version("accelerate")
-    if accelerate_version is None:
-        install("accelerate", "0.23.0")
-    else:
-        accelerate_version = accelerate_version.split(".")
-        accelerate_version = tuple(map(int, accelerate_version))
-        if accelerate_version < (0, 23):
-            install("accelerate", "0.23.0")
-
-    # hotfix - 29 May 2024. sdkit has stopped pulling its dependencies for some reason
-    # temporarily dumping sdkit's requirements here:
-    if os_name != "Windows":
-        sdkit_deps = [
-            "gfpgan",
-            "piexif",
-            "realesrgan",
-            "requests",
-            "picklescan",
-            "safetensors==0.3.3",
-            "k-diffusion==0.0.12",
-            "compel==2.0.1",
-            "controlnet-aux==0.0.6",
-            "invisible-watermark==0.2.0",  # required for SD XL
-        ]
-
-        for mod in sdkit_deps:
-            mod_name = mod
-            mod_force_version_str = None
-            if "==" in mod:
-                mod_name, mod_force_version_str = mod.split("==")
-
-            curr_mod_version_str = version(mod_name)
-            if curr_mod_version_str is None:
-                _install(mod_name, mod_force_version_str)
-            elif mod_force_version_str is not None:
-                curr_mod_version = version_str_to_tuple(curr_mod_version_str)
-                mod_force_version = version_str_to_tuple(mod_force_version_str)
-
-                if curr_mod_version != mod_force_version:
-                    _install(mod_name, mod_force_version_str)
+    # 移除sdkit和diffusers的特殊处理，将其交由Colab代码中的pip指令管理
+    # 移除accelerate的特殊处理，将其交由pip管理
+    # 移除过时的sdkit_deps列表
 
     for module_name in modules_to_log:
         print(f"{module_name}: {version(module_name)}")
@@ -213,10 +111,8 @@ def _install(module_name, module_version=None):
         install_cmd = f'"{sys.executable}" -m pip install {module_name}'
     else:
         install_cmd = f'"{sys.executable}" -m pip install --upgrade {module_name}=={module_version}'
-
     print(">", install_cmd)
     os.system(install_cmd)
-
 
 def install_pkg_if_necessary(pkg_name, required_version):
     if os.path.exists(f"src/{pkg_name}"):
@@ -227,21 +123,17 @@ def install_pkg_if_necessary(pkg_name, required_version):
     if pkg_version != required_version:
         _install(pkg_name, required_version)
 
-
 def version_str_to_tuple(ver_str):
     ver_str = ver_str.split("+")[0]
     ver_str = re.sub("[^0-9.]", "", ver_str)
     ver = ver_str.split(".")
     return tuple(map(int, ver))
 
-
 ### utilities
 def get_allowed_versions(module_name: str, allowed_versions: tuple):
     allowed_versions = (allowed_versions,) if isinstance(allowed_versions, str) else allowed_versions
     latest_version = allowed_versions[-1]
-
     return allowed_versions, latest_version
-
 
 def fail(module_name):
     print(
@@ -256,23 +148,18 @@ Thanks!"""
 
 
 ### Launcher
-
-
 def get_config():
-    config_directory = os.path.dirname(__file__)  # this will be "scripts"
+    config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
     config_json = os.path.join(config_directory, "config.json")
 
     config = None
-
-    # migrate the old config yaml location
     config_legacy_yaml = os.path.join(config_directory, "config.yaml")
     if os.path.isfile(config_legacy_yaml):
         shutil.move(config_legacy_yaml, config_yaml)
 
     if os.path.isfile(config_yaml):
         from ruamel.yaml import YAML
-
         yaml = YAML(typ="safe")
         with open(config_yaml, "r") as configfile:
             try:
@@ -281,7 +168,6 @@ def get_config():
                 print(e, file=sys.stderr)
     elif os.path.isfile(config_json):
         import json
-
         with open(config_json, "r") as configfile:
             try:
                 config = json.load(configfile)
@@ -292,10 +178,8 @@ def get_config():
         config = {}
     return config
 
-
 def launch_uvicorn():
     config = get_config()
-
     pprint(config)
 
     with open("scripts/install_status.txt", "a") as f:
@@ -333,12 +217,8 @@ def launch_uvicorn():
                 bind_ip = "0.0.0.0"
             print("Set bind_ip to ", bind_ip)
 
-    #os.chdir("stable-diffusion")
-
     print("\nLaunching uvicorn\n")
-
     import uvicorn
-
     uvicorn.run(
         "main:server_api",
         port=listen_port,
@@ -347,7 +227,6 @@ def launch_uvicorn():
         host=bind_ip,
         access_log=False,
     )
-
 
 update_modules()
 
