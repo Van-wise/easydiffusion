@@ -20,7 +20,7 @@ os_name = platform.system()
 
 # We will handle all problematic modules manually in our patch.
 modules_to_check = {
-    "xformers": "0.0.16",
+    #"xformers": "0.0.16",
 }
 modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "tokenizers", "safetensors", "accelerate", "huggingface-hub"]
 
