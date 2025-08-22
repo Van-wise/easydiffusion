@@ -33,7 +33,7 @@ modules_to_check = {
     #"ruamel.yaml": "0.17.21",
     #"sqlalchemy": "2.0.19",
     #"python-multipart": "0.0.6",
-    "xformers": "0.0.16",
+    #"xformers": "0.0.16",
     #"huggingface-hub": "0.21.4",
     #"wandb": "0.17.2",
     # "torchruntime": "1.16.2",
