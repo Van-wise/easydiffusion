@@ -1,7 +1,8 @@
-# MODIFIED FOR PYTHON 3.12 COMPATIBILITY (V2 - FINAL)
+# MODIFIED FOR PYTHON 3.12 COMPATIBILITY (V3 - FINAL)
 """
 This script checks and installs the required modules.
-This version includes a patch for both tokenizers and safetensors compilation issues on Python 3.12+.
+This final version resolves the 'clear_device_cache' ImportError by carefully
+managing the 'accelerate' and 'huggingface-hub' package versions.
 """
 
 import os, sys
@@ -21,7 +22,7 @@ os_name = platform.system()
 modules_to_check = {
     "xformers": "0.0.16",
 }
-modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "tokenizers", "safetensors"]
+modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "tokenizers", "safetensors", "accelerate", "huggingface-hub"]
 
 BLACKWELL_DEVICES = re.compile(r"\b(?:5060|5070|5080|5090)\b")
 
@@ -40,34 +41,37 @@ def install(module_name: str, module_version: str, index_url=None, extra_args=""
 
 def update_modules():
     # =================================================================================
-    # START: PYTHON 3.12 COMPATIBILITY PATCH (V2)
-    # This block manually installs Python 3.12-compatible versions of problematic
-    # libraries, bypassing the script's original, incompatible logic.
+    # START: PYTHON 3.12 COMPATIBILITY PATCH (V3 - FINAL)
     # =================================================================================
-    print("\nApplying Python 3.12 compatibility patch (V2)...")
+    print("\nApplying Python 3.12 compatibility patch (V3 - Final)...")
     
-    # 1. Install modern, pre-compiled versions of ALL blockers first.
-    print("Patch Step 1/4: Installing compatible transformers, tokenizers, and safetensors...")
-    os.system(f'"{sys.executable}" -m pip install --upgrade transformers tokenizers safetensors')
+    # 1. Install modern, pre-compiled versions of the initial blockers.
+    print("Patch Step 1/5: Installing compatible transformers, tokenizers, and safetensors...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade "transformers>=4.33.2" "tokenizers>=0.15.0" "safetensors>=0.4.0"')
 
     # 2. Install the main packages, but IGNORE their outdated dependencies.
-    print("Patch Step 2/4: Installing main packages (sdkit, stable-diffusion-sdkit) without their dependencies...")
+    print("Patch Step 2/5: Installing main packages (sdkit, stable-diffusion-sdkit) without their dependencies...")
     os.system(f'"{sys.executable}" -m pip install --upgrade --no-deps stable-diffusion-sdkit==2.1.5 sdkit==2.0.22.8')
+    
+    # 3. CRITICAL FIX: Install a newer version of 'accelerate' to resolve the ImportError,
+    #    while forcing 'huggingface-hub' and 'transformers' to the versions sdkit can tolerate.
+    print("Patch Step 3/5: Upgrading 'accelerate' and locking critical dependency versions...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade accelerate "huggingface_hub==0.21.4" "transformers==4.33.2"')
 
-    # 3. Now, install all other dependencies, letting pip resolve versions against our modern packages.
-    print("Patch Step 3/4: Installing all other dependencies...")
+    # 4. Install all other dependencies.
+    print("Patch Step 4/5: Installing all other remaining dependencies...")
     other_deps = [
         "gfpgan", "piexif", "realesrgan", "picklescan", "k-diffusion==0.0.12",
-        "diffusers==0.28.2", "compel==2.0.1", "accelerate==0.23.0", "controlnet-aux==0.0.6",
-        "invisible-watermark==0.2.0", "huggingface_hub==0.21.4", "albumentations==1.3.0",
+        "diffusers==0.28.2", "compel==2.0.1", "controlnet-aux==0.0.6",
+        "invisible-watermark==0.2.0", "albumentations==1.3.0",
         "opencv-python==4.6.0.66", "pytorch-lightning==1.4.2", "omegaconf==2.1.1",
         "test-tube>=0.7.5", "einops==0.3.0", "open-clip-torch==2.0.2",
         "torchmetrics==0.6.0", "ruamel.yaml"
     ]
     os.system(f'"{sys.executable}" -m pip install --upgrade {" ".join(other_deps)}')
     
-    # 4. Final check on numpy version which can sometimes cause issues.
-    print("Patch Step 4/4: Ensuring numpy version is compatible...")
+    # 5. Final check on numpy version.
+    print("Patch Step 5/5: Ensuring numpy version is compatible...")
     os.system(f'"{sys.executable}" -m pip install "numpy<2"')
     
     print("Python 3.12 compatibility patch applied successfully.\n")
@@ -78,33 +82,26 @@ def update_modules():
     if version("torch") is None:
         torchruntime.install(["torch", "torchvision"])
     else:
-        torch_version_str = version("torch")
-        torch_version = version_str_to_tuple(torch_version_str)
-        print(f"Current torch version: {torch_version} ({torch_version_str})")
+        print(f"Current torch version: {version('torch')}")
 
-    # The original loop is mostly bypassed by our patch. We only run it for xformers.
     for module_name, allowed_versions in modules_to_check.items():
         if os.path.exists(f"src/{module_name}"):
             print(f"Skipping {module_name} update, since it's in developer/editable mode")
             continue
-
         allowed_versions, latest_version = get_allowed_versions(module_name, allowed_versions)
-        requires_install = version(module_name) not in allowed_versions
-        if requires_install:
+        if version(module_name) not in allowed_versions:
             try:
                 install(module_name, latest_version)
             except:
                 traceback.print_exc()
                 fail(module_name)
-
-    # All original installation logic below is now disabled as it's handled by the patch.
     
     print("\n--- Final Package Versions ---")
     for module_name in modules_to_log:
         print(f"{module_name}: {version(module_name)}")
     print("----------------------------\n")
 
-# Helper functions remain unchanged
+# Helper functions and Launcher remain the same
 def _install(module_name, module_version=None):
     if module_version is None:
         install_cmd = f'"{sys.executable}" -m pip install {module_name}'
