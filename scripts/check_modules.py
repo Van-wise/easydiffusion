@@ -1,17 +1,99 @@
 """
-This script launches the Easy Diffusion server.
+This script checks and installs the required modules.
 """
 import os, sys
-import shutil
+from importlib.metadata import version as pkg_version
 import platform
+import shutil
 from pathlib import Path
 from pprint import pprint
+import re
 
-# 移除所有与安装和版本检查相关的函数和变量
-# 仅保留启动服务器所需的核心功能
+os_name = platform.system()
+
+modules_to_check = {
+    "ruamel.yaml": "0.17.21",
+    "sqlalchemy": "2.0.19",
+    "wandb": "0.17.2",
+    "torchsde": "0.2.6",
+    "basicsr": "1.4.2",
+    "gfpgan": "1.3.8",
+}
+
+modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "huggingface-hub", "uvicorn", "python-multipart", "ruamel.yaml"]
+
+
+def version(module_name: str) -> str:
+    try:
+        return pkg_version(module_name)
+    except:
+        return None
+
+def install(module_name: str, module_version: str, index_url=None):
+    install_cmd = f'"{sys.executable}" -m pip install --upgrade {module_name}=={module_version}'
+
+    if index_url:
+        install_cmd += f" --index-url {index_url}"
+    if module_name == "sdkit" and version("sdkit") is not None:
+        install_cmd += " -q"
+    if module_name in ("basicsr", "gfpgan"):
+        install_cmd += " --use-pep517"
+    
+    print(">", install_cmd)
+    os.system(install_cmd)
+
+def update_modules():
+    # 这一部分是关键，我们只检查并修复最核心的依赖，但主要的安装工作已经交给Colab代码
+    print("Checking modules...")
+    for module_name, allowed_versions in modules_to_check.items():
+        if os.path.exists(f"src/{module_name}"):
+            print(f"Skipping {module_name} update, since it's in developer/editable mode")
+            continue
+
+        allowed_versions, latest_version = get_allowed_versions(module_name, allowed_versions)
+
+        requires_install = version(module_name) not in allowed_versions
+
+        if requires_install:
+            try:
+                install(module_name, latest_version)
+            except:
+                traceback.print_exc()
+                fail(module_name)
+            else:
+                if version(module_name) != latest_version:
+                    print(
+                        f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!"
+                    )
+
+    for module_name in modules_to_log:
+        print(f"{module_name}: {version(module_name)}")
+
+
+def version_str_to_tuple(ver_str):
+    ver_str = ver_str.split("+")[0]
+    ver_str = re.sub("[^0-9.]", "", ver_str)
+    ver = ver_str.split(".")
+    return tuple(map(int, ver))
+
+def get_allowed_versions(module_name: str, allowed_versions: tuple):
+    allowed_versions = (allowed_versions,) if isinstance(allowed_versions, str) else allowed_versions
+    latest_version = allowed_versions[-1]
+    return allowed_versions, latest_version
+
+def fail(module_name):
+    print(
+        f"""Error installing {module_name}. Sorry about that, please try to:
+1. Run this installer again.
+2. If that doesn't fix it, please try the common troubleshooting steps at https://github.com/easydiffusion/easydiffusion/wiki/Troubleshooting
+3. If those steps don't help, please copy *all* the error messages in this window, and ask the community at https://discord.com/invite/u9yhsFmEkB
+4. If that doesn't solve the problem, please file an issue at https://github.com/easydiffusion/easydiffusion/issues
+Thanks!"""
+    )
+    exit(1)
+
 
 def get_config():
-    # ... (此函数无需修改，因为它只读取配置文件)
     config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
     config_json = os.path.join(config_directory, "config.json")
@@ -42,6 +124,7 @@ def get_config():
     return config
 
 def launch_uvicorn():
+    # ... (此函数恢复了部分逻辑，但不再尝试安装)
     config = get_config()
     pprint(config)
 
@@ -51,7 +134,6 @@ def launch_uvicorn():
 
     print("\n\nEasy Diffusion installation complete, starting the server!\n\n")
 
-    # 仅在此处导入torchruntime，因为它已经由上层Colab脚本安装
     try:
         import torchruntime
         torchruntime.configure()
@@ -64,9 +146,9 @@ def launch_uvicorn():
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
+        # 这一行我们已经在Colab代码中手动设置了，这里作为保险
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.12", "site-packages"))
     
-    # 这一行是关键，它让uvicorn找到Easy Diffusion的UI代码
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -98,7 +180,6 @@ def launch_uvicorn():
         access_log=False,
     )
 
-# 脚本的执行入口
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
         launch_uvicorn()
