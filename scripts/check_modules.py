@@ -2,31 +2,27 @@
 This script checks and installs the required modules.
 Includes a robust, multi-step installation strategy to handle problematic
 upstream dependencies like older versions of safetensors.
+FINAL VERSION.
 """
 import os
 import sys
 import platform
 import traceback
-import shutil
 from pathlib import Path
 from pprint import pprint
-import re
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 from packaging.version import parse as parse_version
 
 # --- Configuration ---
 # Define the required packages and their target versions.
 REQUIRED_PACKAGES = {
-    # Core application library. Its old dependencies are the main issue.
     "sdkit": "2.0.22.8",
-    # UI and Server
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
     "ruamel.yaml": "0.17.21",
     "sqlalchemy": "2.0.19",
     "python-multipart": "0.0.6",
-    # Other dependencies
     "wandb": "0.17.2",
     "torchsde": "0.2.6",
     "basicsr": "1.4.2",
@@ -34,16 +30,17 @@ REQUIRED_PACKAGES = {
     "accelerate": "0.23.0",
 }
 
-# These packages are known to cause build issues if pinned to old versions.
-# We will ensure modern, pre-compiled versions are installed.
+# These packages are known to cause build issues or conflicts if not handled carefully.
+# We will enforce these specific versions which are known to have pre-compiled wheels
+# and satisfy the dependencies of other libraries in the Colab environment.
 MODERN_DEPS_TO_ENFORCE = {
-    "safetensors": "0.4.3", # A known stable version with wheels
-    "tokenizers": "0.15.2", # A known stable version with wheels
+    "safetensors": "0.4.3",
+    # This version satisfies transformers==4.55.2's requirement (>=0.21, <0.22)
+    # and has pre-compiled wheels for Python 3.12.
+    "tokenizers": "0.21.0", 
 }
 
 MODULES_TO_LOG = ["torch", "torchvision", "sdkit", "diffusers", "safetensors", "tokenizers"]
-
-os_name = platform.system()
 
 def get_package_version(package_name: str) -> str:
     try:
@@ -62,17 +59,17 @@ def run_pip_command(command: str, error_message: str):
 def update_modules():
     print("--- Checking environment dependencies ---")
 
-    # Step 1: Ensure modern, compatible versions of problematic libraries are installed FIRST.
-    # This pre-empts dependency resolution issues from sdkit.
+    # Step 1: Force-install the correct, modern versions of problematic libraries.
+    # This establishes a baseline that we don't want pip to change.
     print("\n--- Step 1: Pre-installing modern core dependencies ---")
     for package, version in MODERN_DEPS_TO_ENFORCE.items():
         install_cmd = f'"{sys.executable}" -m pip install --upgrade "{package}=={version}"'
         run_pip_command(install_cmd, f"Failed to pre-install {package}")
 
-    # Step 2: Install all other required packages, skipping sdkit for now.
+    # Step 2: Install all other dependencies EXCEPT sdkit.
     print("\n--- Step 2: Installing other project dependencies ---")
     for package, required_version in REQUIRED_PACKAGES.items():
-        if package == "sdkit":  # We handle sdkit last
+        if package == "sdkit":
             continue
         
         current_version = get_package_version(package)
@@ -85,24 +82,22 @@ def update_modules():
         else:
             print(f"Package '{package}=={current_version}' is already correct. Skipping.")
 
-    # Step 3: Install sdkit WITHOUT its dependencies, as we've handled them.
-    print("\n--- Step 3: Installing sdkit with dependency resolution override ---")
+    # Step 3: Install sdkit and its dependencies, but use a special pip flag
+    # to prevent it from reinstalling packages that are already up-to-date.
+    # This is the key change: --upgrade-strategy "only-if-needed"
+    # This tells pip: "If safetensors is already installed, even if the version is different,
+    # LEAVE IT ALONE unless it's absolutely necessary for another dependency."
+    print("\n--- Step 3: Installing sdkit with an intelligent upgrade strategy ---")
     sdkit_version = REQUIRED_PACKAGES["sdkit"]
-    install_cmd_no_deps = (
+    install_cmd_smart = (
         f'"{sys.executable}" -m pip install --upgrade '
-        f'"sdkit=={sdkit_version}" --no-dependencies'
+        f'"sdkit=={sdkit_version}" --upgrade-strategy "only-if-needed"'
     )
     run_pip_command(
-        install_cmd_no_deps,
-        "Failed to install sdkit package core. "
-        "This might happen if its other dependencies are missing."
+        install_cmd_smart,
+        "Failed during the final installation of sdkit. "
+        "The environment might have deep dependency conflicts."
     )
-    
-    # Step 4: Run a final install to catch any other sub-dependencies sdkit might need,
-    # but since safetensors is already installed, it won't be re-installed.
-    print("\n--- Step 4: Verifying and installing remaining dependencies for sdkit ---")
-    install_cmd_with_deps = f'"{sys.executable}" -m pip install --upgrade "sdkit=={sdkit_version}"'
-    run_pip_command(install_cmd_with_deps, "Failed during final dependency check for sdkit.")
 
     print("\n--- Dependency check complete ---")
     for module_name in MODULES_TO_LOG:
