@@ -16,8 +16,16 @@ import shutil
 from pathlib import Path
 from pprint import pprint
 import re
-import torchruntime
-from torchruntime.device_db import get_gpus
+# 先检查torchruntime是否安装，未安装则先安装
+try:
+    import torchruntime
+    from torchruntime.device_db import get_gpus
+except ImportError:
+    # 临时安装torchruntime以避免导入错误
+    print("Installing torchruntime...")
+    os.system(f'"{sys.executable}" -m pip install torchruntime==1.16.2')
+    import torchruntime
+    from torchruntime.device_db import get_gpus
 
 os_name = platform.system()
 
@@ -36,7 +44,7 @@ modules_to_check = {
     # "xformers": "0.0.16",
     "huggingface-hub": "0.21.4",
     "wandb": "0.17.2",
-    # "torchruntime": "1.16.2",
+    "torchruntime": "1.16.2",  # 恢复torchruntime的检查
     "torchsde": "0.2.6",
     "basicsr": "1.4.2",
     "gfpgan": "1.3.8",
@@ -68,6 +76,15 @@ def install(module_name: str, module_version: str, index_url=None):
 
 
 def update_modules():
+    # 优先确保torchruntime已安装并为正确版本
+    if version("torchruntime") is None or version("torchruntime") != modules_to_check["torchruntime"]:
+        install("torchruntime", modules_to_check["torchruntime"])
+        # 重新导入以确保使用新安装的版本
+        global torchruntime, get_gpus
+        import importlib
+        importlib.reload(torchruntime)
+        from torchruntime.device_db import get_gpus
+
     if version("torch") is None:
         torchruntime.install(["torch", "torchvision"])
     else:
@@ -310,7 +327,7 @@ def launch_uvicorn():
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
     print(f"Python:  {shutil.which('python')}")
-    print(f"Version: {platform. python_version()}")
+    print(f"Version: {platform.python_version()}")
 
     bind_ip = "127.0.0.1"
     listen_port = 9000
