@@ -30,16 +30,18 @@ def update_modules():
     # A comprehensive list of packages with versions known to be compatible and available on PyPI.
     packages = [
         "torchruntime",
-        "sdkit==2.0.22.9", # Use the latest available 2.0.22.x version
+        "sdkit==2.0.22.9",
         "stable-diffusion-sdkit==2.1.5",
         "diffusers>=0.28.0",
         "transformers>=0.28.0",
         "safetensors>=0.4.0",
         "accelerate>=0.29.0",
-        "fastapi", # Let pip choose the latest compatible version
-        "uvicorn[standard]", # Let pip choose the latest, [standard] includes useful extras
+        "fastapi",
+        "uvicorn[standard]",
         "python-multipart",
         "pycloudflared",
+        "gfpgan", "realesrgan", "piexif", "picklescan",
+        "k-diffusion", "compel", "controlnet-aux", "invisible-watermark",
         "rich",
         "ruamel.yaml"
     ]
@@ -48,14 +50,16 @@ def update_modules():
     print("Installing PyTorch for CUDA...")
     os.system(f'"{sys.executable}" -m pip install --upgrade "torch" "torchvision" --index-url https://download.pytorch.org/whl/cu121')
 
-    # Install the rest of the packages in one go.
+    # [SYNTAX FIX] Correctly build the command string without invalid escape sequences.
     print("Installing application dependencies...")
-    os.system(f'"{sys.executable}" -m pip install --upgrade {" ".join(f\'"{p}"\' for p in packages)}')
+    package_list_str = " ".join([f'"{p}"' for p in packages])
+    os.system(f'"{sys.executable}" -m pip install --upgrade {package_list_str}')
 
     print("\n--- Final Package Versions ---")
     for module_name in ["torch", "torchvision", "sdkit", "diffusers", "transformers", "safetensors"]:
         print(f"{module_name}: {version(module_name)}")
     print("----------------------------\n")
+
 
 # --- Launcher Logic (Corrected for Colab) ---
 def get_config():
@@ -90,7 +94,7 @@ def launch_uvicorn():
 
     # This dynamically sets the correct PYTHONPATH for Colab's Python version.
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    if platform.system() != "Windows":
+    if platform.system() != "Windows" and "INSTALL_ENV_DIR" in os.environ:
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"]) / "lib" / python_version / "site-packages")
 
     os.environ["SD_UI_PATH"] = str(Path.cwd() / "ui")
