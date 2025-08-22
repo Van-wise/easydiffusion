@@ -120,41 +120,28 @@ def update_modules():
                         f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!"
                     )
 
-    # different sdkit versions, with the corresponding diffusers
-    #  if sdkit is 2.0.15.x (or lower), then diffusers should be restricted to 0.21.4 (see below for the reason)
-    #  otherwise use the current sdkit version (with the corresponding diffusers version)
+    # ##################################################################################
+    # ############################ BEGIN MODIFIED CODE BLOCK ###########################
+    # ##################################################################################
+
+    # The original logic here was broken for modern environments. It forced an old,
+    # incompatible version of sdkit, leading to build errors and ImportErrors.
+    # We now bypass this logic and directly install the correct, modern versions
+    # that are compatible with the 'main' branch of the application code.
 
     expected_sdkit_version_str = "2.0.22.8"
     expected_diffusers_version_str = "0.28.2"
 
-    legacy_sdkit_version_str = "2.0.15.17"
-    legacy_diffusers_version_str = "0.21.4"
+    print(f"\nBypassing legacy package logic to prevent errors.")
+    print(f"Ensuring sdkit is version {expected_sdkit_version_str} and diffusers is {expected_diffusers_version_str}")
 
-    sdkit_version_str = version("sdkit")
-    if sdkit_version_str is None:  # first install
-        _install("sdkit", expected_sdkit_version_str)
-        _install("diffusers", expected_diffusers_version_str)
-    else:
-        sdkit_version = version_str_to_tuple(sdkit_version_str)
-        legacy_sdkit_version = version_str_to_tuple(legacy_sdkit_version_str)
+    install_pkg_if_necessary("sdkit", expected_sdkit_version_str)
+    install_pkg_if_necessary("diffusers", expected_diffusers_version_str)
 
-        if sdkit_version[:3] <= legacy_sdkit_version[:3]:
-            # stick to diffusers 0.21.4, since it preserves torch 0.11+ compatibility.
-            # upgrading beyond this will result in a 2+ GB download of torch on older installations
-            #  and a time-consuming chain of small package updates due to huggingface_hub upgrade.
-            # for now, the user will need to explicitly upgrade to a newer sdkit, to break this ceiling.
+    # ##################################################################################
+    # ############################# END MODIFIED CODE BLOCK ############################
+    # ##################################################################################
 
-            install_pkg_if_necessary("sdkit", legacy_sdkit_version_str)
-            install_pkg_if_necessary("diffusers", legacy_diffusers_version_str)
-        else:
-            torch_version = version_str_to_tuple(version("torch"))
-            if torch_version < (1, 13):
-                # install the gpu-compatible torch (if necessary), instead of the default CPU-only one
-                # from the diffusers dependency chain
-                torchruntime.install(["--upgrade", "torch", "torchvision"])
-
-            install_pkg_if_necessary("sdkit", expected_sdkit_version_str)
-            install_pkg_if_necessary("diffusers", expected_diffusers_version_str)
 
     # hotfix accelerate
     accelerate_version = version("accelerate")
@@ -175,9 +162,9 @@ def update_modules():
             "realesrgan",
             "requests",
             "picklescan",
-            "safetensors==0.3.3",
-            "k-diffusion==0.0.12",
-            "compel==2.0.1",
+            "safetensors", # MODIFICATION: REMOVED VERSION PIN "==0.3.3" to fix build error
+            "k-diffusion", # MODIFICATION: REMOVED VERSION PIN "==0.0.12" for compatibility
+            "compel",      # MODIFICATION: REMOVED VERSION PIN "==2.0.1" for compatibility
             "controlnet-aux==0.0.6",
             "invisible-watermark==0.2.0",  # required for SD XL
         ]
@@ -217,12 +204,15 @@ def install_pkg_if_necessary(pkg_name, required_version):
         print(f"Skipping {pkg_name} update, since it's in developer/editable mode")
         return
 
-    pkg_version = version(pkg_name)
-    if pkg_version != required_version:
+    pkg_version_str = version(pkg_name)
+    if pkg_version_str != required_version:
+        print(f"Found {pkg_name} version {pkg_version_str}, but require {required_version}. Upgrading...")
         _install(pkg_name, required_version)
 
 
 def version_str_to_tuple(ver_str):
+    if ver_str is None:
+        return ()
     ver_str = ver_str.split("+")[0]
     ver_str = re.sub("[^0-9.]", "", ver_str)
     ver = ver_str.split(".")
@@ -268,7 +258,7 @@ def get_config():
         from ruamel.yaml import YAML
 
         yaml = YAML(typ="safe")
-        with open(config_yaml, "r") as configfile:
+        with open(config_yaml, "r", encoding="utf-8") as configfile:
             try:
                 config = yaml.load(configfile)
             except Exception as e:
@@ -276,7 +266,7 @@ def get_config():
     elif os.path.isfile(config_json):
         import json
 
-        with open(config_json, "r") as configfile:
+        with open(config_json, "r", encoding="utf-8") as configfile:
             try:
                 config = json.load(configfile)
             except Exception as e:
@@ -302,10 +292,9 @@ def launch_uvicorn():
     if hasattr(torchruntime, "info"):
         torchruntime.info()
 
-    if os_name == "Windows":
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
-    else:
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.12", "site-packages"))
+    # Use a more robust way to set PYTHONPATH
+    python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    os.environ["PYTHONPATH"] = str(Path(os.environ.get("INSTALL_ENV_DIR", "/usr/local"), "lib", python_version, "site-packages"))
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
