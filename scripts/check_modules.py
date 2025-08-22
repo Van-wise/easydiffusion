@@ -1,3 +1,4 @@
+# MODIFIED FOR PYTHON 3.12 COMPATIBILITY
 """
 This script checks and installs the required modules.
 
@@ -25,7 +26,7 @@ modules_to_check = {
     #"setuptools": "69.5.1",
     #"sdkit": "2.0.15.6", # checked later
     # "diffusers": "0.21.4", # checked later
-    "stable-diffusion-sdkit": "2.1.5",
+    # "stable-diffusion-sdkit": "2.1.5", # We will handle this manually for Py3.12
     #"rich": "12.6.0",
     #"uvicorn": "0.19.0",
     #"fastapi": "0.115.6",
@@ -33,7 +34,7 @@ modules_to_check = {
     #"ruamel.yaml": "0.17.21",
     #"sqlalchemy": "2.0.19",
     #"python-multipart": "0.0.6",
-    #"xformers": "0.0.16",
+    "xformers": "0.0.16",
     #"huggingface-hub": "0.21.4",
     #"wandb": "0.17.2",
     # "torchruntime": "1.16.2",
@@ -41,7 +42,7 @@ modules_to_check = {
     #"basicsr": "1.4.2",
     #"gfpgan": "1.3.8",
 }
-modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers"]
+modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "tokenizers"]
 
 BLACKWELL_DEVICES = re.compile(r"\b(?:5060|5070|5080|5090)\b")
 
@@ -53,8 +54,8 @@ def version(module_name: str) -> str:
         return None
 
 
-def install(module_name: str, module_version: str, index_url=None):
-    install_cmd = f'"{sys.executable}" -m pip install --upgrade {module_name}=={module_version}'
+def install(module_name: str, module_version: str, index_url=None, extra_args=""):
+    install_cmd = f'"{sys.executable}" -m pip install --upgrade {module_name}=={module_version} {extra_args}'
 
     if index_url:
         install_cmd += f" --index-url {index_url}"
@@ -68,6 +69,34 @@ def install(module_name: str, module_version: str, index_url=None):
 
 
 def update_modules():
+    # =================================================================================
+    # START: PYTHON 3.12 COMPATIBILITY PATCH
+    # This block manually installs Python 3.12-compatible versions of problematic
+    # libraries, bypassing the script's original, incompatible logic.
+    # =================================================================================
+    print("\nApplying Python 3.12 compatibility patch...")
+    
+    # 1. Install modern, pre-compiled versions of the blockers.
+    print("Patch Step 1/4: Installing compatible transformers and tokenizers...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade transformers tokenizers')
+
+    # 2. Install the main package, but IGNORE its outdated dependencies.
+    print("Patch Step 2/4: Installing stable-diffusion-sdkit without its dependencies...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade --no-deps stable-diffusion-sdkit==2.1.5')
+
+    # 3. Install the second main package and let it pull its (now compatible) dependencies.
+    print("Patch Step 3/4: Installing sdkit and its dependencies...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade sdkit==2.0.22.8')
+    
+    # 4. Ensure other specific versions are met.
+    print("Patch Step 4/4: Installing diffusers and other required libraries...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade diffusers==0.28.2 ruamel.yaml')
+    
+    print("Python 3.12 compatibility patch applied successfully.\n")
+    # =================================================================================
+    # END: PYTHON 3.12 COMPATIBILITY PATCH
+    # =================================================================================
+
     if version("torch") is None:
         torchruntime.install(["torch", "torchvision"])
     else:
@@ -96,6 +125,10 @@ def update_modules():
             print(f"Skipping {module_name} update, since it's in developer/editable mode")
             continue
 
+        # Skip stable-diffusion-sdkit as we've handled it manually
+        if module_name == "stable-diffusion-sdkit":
+            continue
+
         allowed_versions, latest_version = get_allowed_versions(module_name, allowed_versions)
 
         if module_name == "setuptools":
@@ -120,10 +153,12 @@ def update_modules():
                         f"WARNING! Tried to install {module_name}=={latest_version}, but the version is still {version(module_name)}!"
                     )
 
-    # different sdkit versions, with the corresponding diffusers
-    #  if sdkit is 2.0.15.x (or lower), then diffusers should be restricted to 0.21.4 (see below for the reason)
-    #  otherwise use the current sdkit version (with the corresponding diffusers version)
-
+    # =================================================================================
+    # The entire block below is now REDUNDANT because our patch at the top
+    # has already installed the correct versions of sdkit and diffusers.
+    # We comment it out to prevent it from running and causing conflicts.
+    # =================================================================================
+    """
     expected_sdkit_version_str = "2.0.22.8"
     expected_diffusers_version_str = "0.28.2"
 
@@ -139,68 +174,32 @@ def update_modules():
         legacy_sdkit_version = version_str_to_tuple(legacy_sdkit_version_str)
 
         if sdkit_version[:3] <= legacy_sdkit_version[:3]:
-            # stick to diffusers 0.21.4, since it preserves torch 0.11+ compatibility.
-            # upgrading beyond this will result in a 2+ GB download of torch on older installations
-            #  and a time-consuming chain of small package updates due to huggingface_hub upgrade.
-            # for now, the user will need to explicitly upgrade to a newer sdkit, to break this ceiling.
-
             install_pkg_if_necessary("sdkit", legacy_sdkit_version_str)
             install_pkg_if_necessary("diffusers", legacy_diffusers_version_str)
         else:
             torch_version = version_str_to_tuple(version("torch"))
             if torch_version < (1, 13):
-                # install the gpu-compatible torch (if necessary), instead of the default CPU-only one
-                # from the diffusers dependency chain
                 torchruntime.install(["--upgrade", "torch", "torchvision"])
 
             install_pkg_if_necessary("sdkit", expected_sdkit_version_str)
             install_pkg_if_necessary("diffusers", expected_diffusers_version_str)
+    """
 
     # hotfix accelerate
     accelerate_version = version("accelerate")
     if accelerate_version is None:
         install("accelerate", "0.23.0")
     else:
-        accelerate_version = accelerate_version.split(".")
-        accelerate_version = tuple(map(int, accelerate_version))
-        if accelerate_version < (0, 23):
+        accelerate_version_tuple = tuple(map(int, accelerate_version.split(".")))
+        if accelerate_version_tuple < (0, 23):
             install("accelerate", "0.23.0")
-
-    # hotfix - 29 May 2024. sdkit has stopped pulling its dependencies for some reason
-    # temporarily dumping sdkit's requirements here:
-    if os_name != "Windows":
-        sdkit_deps = [
-            #"gfpgan",
-            #"piexif",
-            #"realesrgan",
-            #"requests",
-            #"picklescan",
-            #"safetensors==0.3.3",
-            #"k-diffusion==0.0.12",
-            #"compel==2.0.1",
-            #"controlnet-aux==0.0.6",
-            #"invisible-watermark==0.2.0",  # required for SD XL
-        ]
-
-        for mod in sdkit_deps:
-            mod_name = mod
-            mod_force_version_str = None
-            if "==" in mod:
-                mod_name, mod_force_version_str = mod.split("==")
-
-            curr_mod_version_str = version(mod_name)
-            if curr_mod_version_str is None:
-                _install(mod_name, mod_force_version_str)
-            elif mod_force_version_str is not None:
-                curr_mod_version = version_str_to_tuple(curr_mod_version_str)
-                mod_force_version = version_str_to_tuple(mod_force_version_str)
-
-                if curr_mod_version != mod_force_version:
-                    _install(mod_name, mod_force_version_str)
-
+            
+    # The sdkit_deps block is also no longer necessary as sdkit should handle its dependencies now.
+    
+    print("\n--- Final Package Versions ---")
     for module_name in modules_to_log:
         print(f"{module_name}: {version(module_name)}")
-
+    print("----------------------------\n")
 
 def _install(module_name, module_version=None):
     if module_version is None:
@@ -223,6 +222,8 @@ def install_pkg_if_necessary(pkg_name, required_version):
 
 
 def version_str_to_tuple(ver_str):
+    if ver_str is None:
+      return (0, 0, 0)
     ver_str = ver_str.split("+")[0]
     ver_str = re.sub("[^0-9.]", "", ver_str)
     ver = ver_str.split(".")
@@ -265,6 +266,11 @@ def get_config():
         shutil.move(config_legacy_yaml, config_yaml)
 
     if os.path.isfile(config_yaml):
+        # Add a check for ruamel.yaml before importing
+        if version("ruamel.yaml") is None:
+            print("ruamel.yaml not found, installing...")
+            os.system(f'"{sys.executable}" -m pip install ruamel.yaml')
+            
         from ruamel.yaml import YAML
 
         yaml = YAML(typ="safe")
@@ -305,7 +311,9 @@ def launch_uvicorn():
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.12", "site-packages"))
+        # Correct path for default python in Colab
+        py_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", py_version, "site-packages"))
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -325,8 +333,6 @@ def launch_uvicorn():
             else:
                 bind_ip = "0.0.0.0"
             print("Set bind_ip to ", bind_ip)
-
-    #os.chdir("stable-diffusion")
 
     print("\nLaunching uvicorn\n")
 
