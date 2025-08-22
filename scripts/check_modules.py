@@ -1,48 +1,68 @@
 """
 This script checks and installs the required modules.
-MODIFIED FOR COLAB: The update_modules() function is DISABLED to prevent
-dependency conflicts. All installations are now handled in the main notebook.
-This script is now only used as a LAUNCHER.
+MODIFIED FOR MODERN ENVIRONMENTS (like Google Colab with Python 3.12)
+This script is now self-contained and handles all dependencies correctly.
 """
 
-import os, sys
-from importlib.metadata import version as pkg_version
+import os
+import sys
 import platform
-import traceback
 import shutil
 from pathlib import Path
 from pprint import pprint
-import re
-import torchruntime
-from torchruntime.device_db import get_gpus
+from importlib.metadata import version as pkg_version
 
-os_name = platform.system()
-
-# All modules are installed in the notebook, these lists are for logging only.
-modules_to_check = {}
-modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "safetensors"]
-
+# --- Helper Functions ---
 def version(module_name: str) -> str:
-    try: return pkg_version(module_name)
-    except: return None
+    try:
+        return pkg_version(module_name)
+    except Exception:
+        return None
 
+# --- Main Installation Logic ---
 def update_modules():
-    # ####################################################################
-    # # CRITICAL MODIFICATION: DO NOTHING.
-    # # The entire original function is disabled because it's broken
-    # # in the Colab environment. All installations are handled outside.
-    # ####################################################################
-    print("Skipping internal module installation to use pre-installed environment.")
+    """
+    Installs all necessary dependencies using modern, compatible versions
+    that do not require compilation on Colab.
+    """
+    print("Installing all necessary dependencies for a modern environment...")
+
+    # A comprehensive list of packages with versions known to be compatible and available on PyPI.
+    packages = [
+        "torchruntime",
+        "sdkit==2.0.22.9", # Use the latest available 2.0.22.x version
+        "stable-diffusion-sdkit==2.1.5",
+        "diffusers>=0.28.0",
+        "transformers>=0.28.0",
+        "safetensors>=0.4.0",
+        "accelerate>=0.29.0",
+        "fastapi", # Let pip choose the latest compatible version
+        "uvicorn[standard]", # Let pip choose the latest, [standard] includes useful extras
+        "python-multipart",
+        "pycloudflared",
+        "rich",
+        "ruamel.yaml"
+    ]
+    
+    # We install PyTorch/Torchvision separately for GPU compatibility in Colab.
+    print("Installing PyTorch for CUDA...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade "torch" "torchvision" --index-url https://download.pytorch.org/whl/cu121')
+
+    # Install the rest of the packages in one go.
+    print("Installing application dependencies...")
+    os.system(f'"{sys.executable}" -m pip install --upgrade {" ".join(f\'"{p}"\' for p in packages)}')
+
     print("\n--- Final Package Versions ---")
-    for module_name in modules_to_log:
+    for module_name in ["torch", "torchvision", "sdkit", "diffusers", "transformers", "safetensors"]:
         print(f"{module_name}: {version(module_name)}")
     print("----------------------------\n")
 
+# --- Launcher Logic (Corrected for Colab) ---
 def get_config():
-    config_directory = os.path.dirname(__file__)
-    config_yaml = os.path.join(config_directory, "..", "config.yaml")
+    config_directory = Path(__file__).parent
+    config_yaml = config_directory.parent / "config.yaml"
     config = {}
-    if os.path.isfile(config_yaml):
+    if config_yaml.is_file():
         try:
             from ruamel.yaml import YAML
             yaml = YAML(typ="safe")
@@ -53,6 +73,9 @@ def get_config():
     return config if config is not None else {}
 
 def launch_uvicorn():
+    # Import torchruntime here, after it's guaranteed to be installed.
+    import torchruntime
+
     config = get_config()
     pprint(config)
 
@@ -65,10 +88,10 @@ def launch_uvicorn():
     if hasattr(torchruntime, "info"):
         torchruntime.info()
 
-    # CRITICAL FIX for Colab Python version
+    # This dynamically sets the correct PYTHONPATH for Colab's Python version.
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    if os_name != "Windows":
-        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", python_version, "site-packages"))
+    if platform.system() != "Windows":
+        os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"]) / "lib" / python_version / "site-packages")
 
     os.environ["SD_UI_PATH"] = str(Path.cwd() / "ui")
 
@@ -85,12 +108,9 @@ def launch_uvicorn():
         if config["net"].get("listen_to_network"):
             bind_ip = config["net"].get("bind_ip", "0.0.0.0")
             print(f"Set bind_ip to {bind_ip}")
-
-    # The original script had an incorrect os.chdir() here, it has been removed.
-
-    print("\nLaunching uvicorn\n")
+    
     import uvicorn
-
+    print("\nLaunching uvicorn\n")
     uvicorn.run(
         "main:server_api",
         port=listen_port,
@@ -100,10 +120,9 @@ def launch_uvicorn():
         access_log=False,
     )
 
-# This is the main execution block
+# --- Main Execution Block ---
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
+    if "--launch-uvicorn" in sys.argv:
         launch_uvicorn()
     else:
-        # If run without arguments, it will now do nothing harmful.
         update_modules()
