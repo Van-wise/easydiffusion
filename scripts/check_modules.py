@@ -1,24 +1,17 @@
 """
-This script checks and installs the required modules.
+This script launches the Easy Diffusion server.
 """
 import os, sys
-from importlib.metadata import version as pkg_version
-import platform
-import traceback
 import shutil
+import platform
 from pathlib import Path
 from pprint import pprint
-import re
 
-# 移除所有不必要的导入和变量
-# modules_to_check, modules_to_log, BLACKWELL_DEVICES
-
-# 移除所有安装、版本检查和修复函数
-# version, install, update_modules, _install, install_pkg_if_necessary, version_str_to_tuple, get_allowed_versions, fail
-
-### Launcher
+# 移除所有与安装和版本检查相关的函数和变量
+# 仅保留启动服务器所需的核心功能
 
 def get_config():
+    # ... (此函数无需修改，因为它只读取配置文件)
     config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
     config_json = os.path.join(config_directory, "config.json")
@@ -58,18 +51,22 @@ def launch_uvicorn():
 
     print("\n\nEasy Diffusion installation complete, starting the server!\n\n")
 
-    # 仅在此处导入torchruntime，确保它已被上层脚本安装
-    import torchruntime
-    torchruntime.configure()
-    if hasattr(torchruntime, "info"):
-        torchruntime.info()
+    # 仅在此处导入torchruntime，因为它已经由上层Colab脚本安装
+    try:
+        import torchruntime
+        torchruntime.configure()
+        if hasattr(torchruntime, "info"):
+            torchruntime.info()
+    except ImportError:
+        print("Warning: torchruntime module not found. The server may not function correctly without it.")
 
     os_name = platform.system()
     if os_name == "Windows":
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "site-packages"))
     else:
-        # 使用python3.12是因为Colab的默认版本是这个
         os.environ["PYTHONPATH"] = str(Path(os.environ["INSTALL_ENV_DIR"], "lib", "python3.12", "site-packages"))
+    
+    # 这一行是关键，它让uvicorn找到Easy Diffusion的UI代码
     os.environ["SD_UI_PATH"] = str(Path(Path.cwd(), "ui"))
 
     print(f"PYTHONPATH={os.environ['PYTHONPATH']}")
@@ -102,5 +99,6 @@ def launch_uvicorn():
     )
 
 # 脚本的执行入口
-if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
-    launch_uvicorn()
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
+        launch_uvicorn()
