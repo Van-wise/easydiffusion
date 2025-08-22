@@ -13,24 +13,22 @@ import shutil
 from pathlib import Path
 from pprint import pprint
 import re
-import torchruntime
+try:
+    import torchruntime
+except ImportError:
+    print("Could not import torchruntime. Please ensure it was installed correctly in the main notebook.")
+    sys.exit(1)
+
 
 os_name = platform.system()
 
-# Most modules are now pre-installed in the Colab notebook.
-# This list only contains safe, non-conflicting packages.
+# This list is intentionally kept small.
+# The main, conflicting packages are all handled in the Colab cell.
 modules_to_check = {
-    "rich": "12.6.0",
-    "uvicorn": "0.19.0",
-    "fastapi": "0.115.6",
-    "ruamel.yaml": "0.17.21",
-    "sqlalchemy": "2.0.19",
-    "python-multipart": "0.0.6",
     "basicsr": "1.4.2",
     "gfpgan": "1.3.8",
 }
-modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "safetensors"]
-
+modules_to_log = ["torchruntime", "torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "transformers", "safetensors", "accelerate"]
 
 def version(module_name: str) -> str:
     try:
@@ -46,10 +44,11 @@ def install(module_name: str, module_version: str):
     os.system(install_cmd)
 
 def update_modules():
-    print("Running simplified module check...")
+    print("Running highly simplified module check...")
     for module_name, req_version in modules_to_check.items():
         if version(module_name) != req_version:
              try:
+                print(f"Installing missing/wrong version: {module_name}")
                 install(module_name, req_version)
              except:
                 traceback.print_exc()
@@ -57,7 +56,9 @@ def update_modules():
 
     print("\n--- Final Package Versions ---")
     for module_name in modules_to_log:
-        print(f"{module_name}: {version(module_name)}")
+        # Don't fail if a package isn't found, just report it.
+        ver = version(module_name)
+        print(f"{module_name}: {'Not Found' if ver is None else ver}")
     print("----------------------------\n")
 
 
@@ -67,17 +68,17 @@ def fail(module_name):
 
 ### Launcher
 def get_config():
-    config_directory = os.path.dirname(__file__)  # this will be "scripts"
+    config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
     config = {}
     if os.path.isfile(config_yaml):
-        from ruamel.yaml import YAML
-        yaml = YAML(typ="safe")
-        with open(config_yaml, "r", encoding="utf-8") as configfile:
-            try:
+        try:
+            from ruamel.yaml import YAML
+            yaml = YAML(typ="safe")
+            with open(config_yaml, "r", encoding="utf-8") as configfile:
                 config = yaml.load(configfile)
-            except Exception as e:
-                print(e, file=sys.stderr)
+        except Exception as e:
+            print(f"Error loading config.yaml: {e}", file=sys.stderr)
     return config if config is not None else {}
 
 def launch_uvicorn():
@@ -103,7 +104,7 @@ def launch_uvicorn():
 
     bind_ip = "127.0.0.1"
     listen_port = 9000
-    if "net" in config and isinstance(config["net"], dict):
+    if "net" in config and isinstance(config.get("net"), dict):
         print("Checking network settings")
         listen_port = config["net"].get("listen_port", 9000)
         print(f"Set listen port to {listen_port}")
@@ -125,7 +126,9 @@ def launch_uvicorn():
 
 # --- Main execution logic ---
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--launch-uvicorn":
+    # Check if the --launch-uvicorn flag is present
+    if "--launch-uvicorn" in sys.argv:
         launch_uvicorn()
     else:
+        # Otherwise, just run the simple module check
         update_modules()
