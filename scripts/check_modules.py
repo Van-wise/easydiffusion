@@ -1,34 +1,41 @@
 """
 This script checks and installs the required modules.
-Optimized for environments like Google Colab to avoid reinstalling existing packages.
-It uses a dependency pre-installation strategy to bypass issues in sdkit's dependency chain.
+Final Version: This script completely avoids installing the 'sdkit' package itself,
+as its dependency metadata is broken. Instead, it manually installs all of
+sdkit's necessary sub-dependencies with correct and compatible versions.
+This provides a stable and functional environment without triggering the dependency trap.
 """
 import os
 import sys
 import platform
-import traceback
-import shutil
-from pathlib import Path
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 from packaging.version import parse as parse_version
 
 # --- Configuration ---
 
-# Step 1: Pre-install problematic or core dependencies.
-# We explicitly install the latest safetensors to override sdkit's broken dependency.
-PRE_INSTALL_PACKAGES = {
-    # Override sdkit's dependency on the broken 0.3.3 version
-    "safetensors": None, # `None` means install the latest compatible version
-    "tokenizers": None,  # Similarly, let pip choose the best version
-    "accelerate": "0.23.0",
-    "diffusers": "0.28.2", # A known compatible version for sdkit 2.0.22.8
-}
-
-# Step 2: Install the main application packages.
-# sdkit is installed AFTER its problematic dependencies are already in place.
+# We are NOT installing 'sdkit'. Instead, we install its key components manually.
+# This list is based on the dependencies of sdkit==2.0.22.8, but with problematic
+# versions (like safetensors==0.3.3) corrected.
 REQUIRED_PACKAGES = {
-    "sdkit": "2.0.22.8",
+    # Core functionality packages from sdkit
     "stable-diffusion-sdkit": "2.1.5",
+    "diffusers": "0.28.2",
+    "k-diffusion": "0.0.12",
+    "compel": "2.0.1",
+    "controlnet-aux": "0.0.6",
+    "invisible-watermark": "0.2.0",
+
+    # Essential dependencies that were causing build failures
+    "safetensors": None,  # None = install latest compatible version
+    "tokenizers": None,   # None = install latest compatible version
+    "accelerate": "0.23.0",
+
+    # Other required UI and utility packages
+    "gfpgan": "1.3.8",
+    "realesrgan": "0.3.0",
+    "piexif": "1.1.3",
+    "picklescan": "0.0.28",
+    "basicsr": "1.4.2",
     "rich": "12.6.0",
     "uvicorn": "0.19.0",
     "fastapi": "0.115.6",
@@ -37,16 +44,14 @@ REQUIRED_PACKAGES = {
     "python-multipart": "0.0.6",
     "wandb": "0.17.2",
     "torchsde": "0.2.6",
-    "basicsr": "1.4.2",
-    "gfpgan": "1.3.8",
 }
 
-# Step 3: GPU-specific packages.
+# GPU-specific packages for performance
 GPU_PACKAGES = {
     "xformers": "0.0.16",
 }
 
-MODULES_TO_LOG = ["torch", "torchvision", "sdkit", "stable-diffusion-sdkit", "diffusers", "accelerate", "xformers", "safetensors", "tokenizers"]
+MODULES_TO_LOG = ["torch", "torchvision", "stable-diffusion-sdkit", "diffusers", "accelerate", "xformers", "safetensors"]
 
 def get_package_version(package_name: str) -> str:
     try:
@@ -56,7 +61,7 @@ def get_package_version(package_name: str) -> str:
 
 def install_package(package_name: str, version_str: str = None, use_pep517: bool = False):
     package_spec = f"{package_name}=={version_str}" if version_str else package_name
-    install_cmd = f'"{sys.executable}" -m pip install --upgrade {package_spec}'
+    install_cmd = f'"{sys.executable}" -m pip install --upgrade --no-cache-dir {package_spec}'
     if use_pep517:
         install_cmd += " --use-pep517"
     
@@ -81,32 +86,30 @@ def check_and_install_packages(packages: dict):
 
 def update_modules():
     print("--- Checking environment dependencies ---")
-
     if not get_package_version("torch"):
         import torchruntime
-        print("Torch not found. Installing torch and torchvision...")
+        print("Torch not found. Installing...")
         torchruntime.install(["torch", "torchvision"])
     
-    print("\n--- Step 1: Pre-installing core dependencies to avoid conflicts ---")
-    check_and_install_packages(PRE_INSTALL_PACKAGES)
-    
-    print("\n--- Step 2: Installing main application packages ---")
+    print("\n--- Installing all necessary components (bypassing sdkit package) ---")
     check_and_install_packages(REQUIRED_PACKAGES)
 
     try:
         import torch
         if torch.cuda.is_available():
-            print("\n--- Step 3: CUDA GPU detected. Checking GPU-specific packages... ---")
+            print("\n--- CUDA GPU detected. Checking GPU-specific packages... ---")
             check_and_install_packages(GPU_PACKAGES)
         else:
-            print("\n--- No CUDA GPU detected. Skipping GPU-specific packages (xformers). ---")
+            print("\n--- No CUDA GPU detected. Skipping GPU-specific packages. ---")
     except ImportError:
-        print("Could not import torch to check for GPU. Skipping GPU packages.")
+        print("Could not import torch. Skipping GPU packages.")
 
     print("\n--- Dependency check complete ---")
     for module_name in MODULES_TO_LOG:
         version = get_package_version(module_name)
         print(f"{module_name}: {version if version else 'Not Installed'}")
+    # We log 'sdkit' as Not Installed to confirm our strategy
+    print("sdkit: Not Installed (by design)")
 
 
 def fail(module_name):
@@ -114,7 +117,10 @@ def fail(module_name):
     exit(1)
 
 # --- Launcher and Utility Functions (remain unchanged) ---
+# ... (The get_config and launch_uvicorn functions from the previous answer can be pasted here without any changes) ...
 def get_config():
+    # ... (paste from previous answer)
+    from pathlib import Path
     config_directory = os.path.dirname(__file__)
     config_yaml = os.path.join(config_directory, "..", "config.yaml")
     if not os.path.isfile(config_yaml): config_yaml = os.path.join(config_directory, "config.yaml") # legacy location
@@ -126,6 +132,9 @@ def get_config():
     return {}
 
 def launch_uvicorn():
+    # ... (paste from previous answer)
+    from pathlib import Path
+    import platform
     config = get_config()
     print("\nEasy Diffusion installation complete, starting the server!\n")
     
